@@ -3,9 +3,45 @@ import cv2
 
 
 cap = cv2.VideoCapture(0)
-instrinsics = [[1.42127421e+03, 0.00000000e+00, 9.80978474e+02],
+intrinsics = np.mat([[1.42127421e+03, 0.00000000e+00, 9.80978474e+02],
  [0.00000000e+00, 1.42048319e+03, 5.47188117e+02],
- [0.00000000e+00, 0.00000000e+00, 1.00000000e+00]]
+ [0.00000000e+00, 0.00000000e+00, 1.00000000e+00]])
+
+
+
+extrinsics = np.mat([
+    [1, 0, 0, 0],
+    [0, 1, 0, 0],
+    [0, 0, 1, 10],
+    [0, 0, 0, 1],
+])
+
+def pixel_to_position(pixels):
+    # Camera intrinsic matrix
+    K = intrinsics
+    x = pixels[0,0]
+    y = pixels[0,1]
+    c_x, c_y = K[0,2], K[1,2]
+    f_x,f_y = K[0,0], K[1,1]
+    u_normalized = (x - c_x) / f_x
+    v_normalized = (y - c_y) / f_y
+
+    # Convert normalized image coordinates to camera coordinates
+    normalized_coords = np.array([u_normalized, v_normalized, 1])
+    camera_coords = np.linalg.inv(K) @ normalized_coords
+
+    # Convert camera coordinates to world coordinates
+    world_coords = 1000 * camera_coords
+
+    # Calculate distance from wall's 0,0
+    distance = np.linalg.norm(world_coords)
+
+    return camera_coords
+
+    # 2D pixel coordinates
+
+  
+
 
 
 while(True):
@@ -35,8 +71,8 @@ while(True):
    if circles is not None:
        circles = np.round(circles[0, :]).astype("int")
        cv2.circle(output_frame, center=(circles[0, 0], circles[0, 1]), radius=circles[0, 2], color=(0, 255, 0), thickness=2)
-    #    cv2.circle(output_frame, center=(0,0), radius=circles[0, 2], color=(0, 255, 0), thickness=2)
-       print((circles[0, 0], circles[0, 1]))
+       print(pixel_to_position(circles))
+        
 
 
    # Display the resulting frame, quit with q
