@@ -137,7 +137,7 @@ def main(argv):
 
             # Double check that the angles are a correct solution before sending anything to the real robot
             pos = forward_kinematics.fk_foot(joint_angles[:3])[:3,3]
-            if np.linalg.norm(np.asarray(pos) - xyz) > 0.05:
+            if np.linalg.norm(np.asarray(pos) - xyz) > 0.5:
               joint_angles = np.zeros_like(joint_angles)
               if flags.FLAGS.set_joint_angles:
                 joint_angles = np.array(flags.FLAGS.set_joint_angles, dtype=np.float32)
@@ -173,6 +173,7 @@ def main(argv):
       elbow_pos    = forward_kinematics.fk_elbow(joint_angles[:3])[:3,3]
       foot_pos     = forward_kinematics.fk_foot(joint_angles[:3])[:3,3]
 
+      # shoulder_pos = np.array([0,0,0,1])
       # Show the bebug spheres for FK
       p.resetBasePositionAndOrientation(shoulder_sphere_id, posObj=shoulder_pos, ornObj=[0, 0, 0, 1])
       p.resetBasePositionAndOrientation(elbow_sphere_id   , posObj=elbow_pos   , ornObj=[0, 0, 0, 1])

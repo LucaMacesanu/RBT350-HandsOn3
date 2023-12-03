@@ -9,6 +9,7 @@ LOWER_LEG_OFFSET = 0.13 # length of link 2
 def rotation_matrix(axis, angle):
   """
   Create a 3x3 rotation matrix which rotates about a specific axis
+  
 
   Args:
     axis:  Array.  Unit vector in the direction of the axis of rotation
@@ -17,8 +18,18 @@ def rotation_matrix(axis, angle):
   Returns:
     3x3 rotation matrix as a numpy array
   """
+  wx = axis[0]
+  wy = axis[1]
+  wz = axis[2]
+  cost = np.cos(angle)
+  sint = np.sin(angle)
 
-  rot_mat = np.eye(3)
+  rot_mat = np.block([
+    [cost + (wx**2)*(1-cost), wx*wy*(1-cost)-wz*sint, wy*sint+wx*wz*(1-cost)],
+    [wz*sint+wx*wy*(1-cost), cost+(wy**2)*(1-cost), -wx*sint + wy*wz*(1-cost)],
+    [-wy*sint+wx*wz*(1-cost), wx*sint + wy*wz*(1-cost), cost + (wz**2)*(1-cost)]
+  ])
+
   return rot_mat
 
 def homogenous_transformation_matrix(axis, angle, v_A):
@@ -32,10 +43,18 @@ def homogenous_transformation_matrix(axis, angle, v_A):
 
   Returns:
     4x4 transformation matrix as a numpy array
-  """
 
-  T = np.eye(4)
-  return T
+
+  """
+  r = rotation_matrix(axis,angle)
+
+  transformation = np.block([
+    [r[0,0],r[0,1],r[0,2],v_A[0]],
+    [r[1,0],r[1,1],r[1,2],v_A[1]],
+    [r[2,0],r[2,1],r[2,2],v_A[2]],
+    [0,0,0,1]
+  ])
+  return transformation
 
 def fk_hip(joint_angles):
   """
@@ -48,8 +67,7 @@ def fk_hip(joint_angles):
   Returns:
     4x4 matrix representing the pose of the hip frame in the base frame
   """
-
-  hip_frame = np.eye(4)  # remove this line when you write your solution
+  hip_frame = homogenous_transformation_matrix(axis=[0,0,1], angle=joint_angles[0], v_A=[0,0,0])
   return hip_frame
 
 def fk_shoulder(joint_angles):
@@ -64,13 +82,11 @@ def fk_shoulder(joint_angles):
     4x4 matrix representing the pose of the shoulder frame in the base frame
   """
 
-  # remove these lines when you write your solution
-  default_sphere_location = np.array([[0.15, 0.0, -0.1]])
-  shoulder_frame = np.block(
-    [[np.eye(3), default_sphere_location.T], 
-     [0, 0, 0, 1]])
-  return shoulder_frame
-
+  base_to_hip = fk_hip(joint_angles)
+  hip_to_shoulder = homogenous_transformation_matrix(axis=[0,1,0],angle=joint_angles[1],v_A=[0,-HIP_OFFSET,0])
+  return np.matmul(base_to_hip,hip_to_shoulder)
+ 
+  
 def fk_elbow(joint_angles):
   """
   Use forward kinematics equations to calculate the xyz coordinates of the elbow
@@ -81,14 +97,13 @@ def fk_elbow(joint_angles):
                   elbow_angle]. Angles are in radians
   Returns:
     4x4 matrix representing the pose of the elbow frame in the base frame
-  """
 
-  # remove these lines when you write your solution
-  default_sphere_location = np.array([[0.15, 0.1, -0.1]])
-  elbow_frame = np.block(
-    [[np.eye(3), default_sphere_location.T], 
-     [0, 0, 0, 1]])
-  return elbow_frame
+
+  """
+  base_to_shoulder = fk_shoulder(joint_angles)
+  shoulder_to_elbow = homogenous_transformation_matrix(axis=[0,1,0],angle=joint_angles[2],v_A=[0,0,UPPER_LEG_OFFSET])
+  return np.matmul(base_to_shoulder,shoulder_to_elbow)
+
 
 def fk_foot(joint_angles):
   """
@@ -101,10 +116,8 @@ def fk_foot(joint_angles):
   Returns:
     4x4 matrix representing the pose of the end effector frame in the base frame
   """
+  base_to_elbow = fk_elbow(joint_angles)
+  elbow_to_foot = homogenous_transformation_matrix(axis=[0,1,0],angle=0,v_A=[0,0,LOWER_LEG_OFFSET])
+  return np.matmul(base_to_elbow,elbow_to_foot)
 
-  # remove these lines when you write your solution
-  default_sphere_location = np.array([[0.15, 0.2, -0.1]])
-  end_effector_frame = np.block(
-    [[np.eye(3), default_sphere_location.T], 
-     [0, 0, 0, 1]])
-  return end_effector_frame
+
