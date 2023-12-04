@@ -31,7 +31,7 @@ def pixel_to_position(pixels):
     camera_coords = np.linalg.inv(K) @ normalized_coords
 
     # Convert camera coordinates to world coordinates
-    world_coords = 1000 * camera_coords
+    world_coords = 333.14 * camera_coords
 
     # Calculate distance from wall's 0,0
     distance = np.linalg.norm(world_coords)
