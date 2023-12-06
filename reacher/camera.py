@@ -35,13 +35,14 @@ def pixel_to_position(pixels):
 
     # Calculate distance from wall's 0,0
     distance = np.linalg.norm(world_coords)
+    print("ooga")
 
     return camera_coords
 
     # 2D pixel coordinates
 
   
-
+    
 
 
 while(True):
