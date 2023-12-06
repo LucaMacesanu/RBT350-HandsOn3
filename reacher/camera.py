@@ -1,5 +1,6 @@
 import numpy as np
 import cv2
+import time
 
 
 cap = cv2.VideoCapture(0)
@@ -19,23 +20,24 @@ extrinsics = np.mat([
 def pixel_to_position(pixels):
     # Camera intrinsic matrix
     K = intrinsics
-    x = pixels[0,0]
-    y = pixels[0,1]
+    u = pixels[0,0]
+    v = pixels[0,1]
+    d = 10
     c_x, c_y = K[0,2], K[1,2]
     f_x,f_y = K[0,0], K[1,1]
-    u_normalized = (x - c_x) / f_x
-    v_normalized = (y - c_y) / f_y
+    x = (u - c_x) * d / f_x
+    y = (v - c_y) * d / f_y
+    z = d
 
     # Convert normalized image coordinates to camera coordinates
-    normalized_coords = np.array([u_normalized, v_normalized, 1])
-    camera_coords = np.linalg.inv(K) @ normalized_coords
+
+    camera_coords = np.mat([x, y, z, 1]).T
 
     # Convert camera coordinates to world coordinates
-    world_coords = 333.14 * camera_coords
+    # world_coords = 333.14 * camera_coords
 
     # Calculate distance from wall's 0,0
-    distance = np.linalg.norm(world_coords)
-    print("ooga")
+    # distance = np.linalg.norm(world_coords)
 
     return camera_coords
 
@@ -65,7 +67,7 @@ while(True):
    captured_frame_lab_red = cv2.GaussianBlur(captured_frame_lab_red, (5, 5), 2, 2)
    # Use the Hough transform to detect circles in the image
    circles = cv2.HoughCircles(captured_frame_lab_red, cv2.HOUGH_GRADIENT, 1, captured_frame_lab_red.shape[0] / 8, param1=100, param2=18, minRadius=5, maxRadius=60)
-
+   time.sleep(0.1)
 
    # If we have extracted a circle, draw an outline
    # We only need to detect one circle here, since there will only be one reference object
@@ -73,6 +75,8 @@ while(True):
        circles = np.round(circles[0, :]).astype("int")
        cv2.circle(output_frame, center=(circles[0, 0], circles[0, 1]), radius=circles[0, 2], color=(0, 255, 0), thickness=2)
        print(pixel_to_position(circles))
+
+    
         
 
 
