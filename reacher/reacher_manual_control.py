@@ -2,6 +2,7 @@ from reacher import forward_kinematics
 from reacher import inverse_kinematics
 from reacher import reacher_robot_utils
 from reacher import reacher_sim_utils
+from reacher import camera
 import pybullet as p
 import time
 import contextlib
@@ -10,10 +11,12 @@ from absl import app
 from absl import flags
 from pupper_hardware_interface import interface
 from sys import platform
+import cv2
 
 flags.DEFINE_bool("run_on_robot", False, "Whether to run on robot or in simulation.")
 flags.DEFINE_bool("ik"          , False, "Whether to control arms through cartesian coordinates(IK) or joint angles")
 flags.DEFINE_list("set_joint_angles", [], "List of joint angles to set at initialization.")
+flags.DEFINE_bool("red_dot"), False, "Whether to control using red dot detection"
 FLAGS = flags.FLAGS
 
 KP = 5.0  # Amps/rad
@@ -25,11 +28,61 @@ UPDATE_DT = 0.01  # seconds
 HIP_OFFSET = 0.0335  # meters
 L1 = 0.08  # meters
 L2 = 0.11  # meters
+cap = cv2.VideoCapture(1)
+
+def pixel_to_position(pixels):
+    # print("pixels shape:", pixels.shape)
+    # Camera intrinsic matrix
+    K = np.mat([[1.42127421e+03, 0.00000000e+00, 320],
+    [0.00000000e+00, 1.42048319e+03, 240],
+    [0.00000000e+00, 0.00000000e+00, 1.00000000e+00]])
+    u = pixels[0,0]
+    v = pixels[0,1]
+    d = 1
+    c_x, c_y = K[0,2], K[1,2]
+    f_x,f_y = K[0,0], K[1,1]
+    x = (u - c_x) * d / f_x
+    y = (v - c_y) * d / f_y
+    z = d
+
+    camera_coords = np.mat([x, y, z, 1]).T
+    return camera_coords
+
+def find_dot():
+  # Capture frame-by-frame
+   ret, captured_frame = cap.read()
+   output_frame = captured_frame.copy()
+   # Convert original image to BGR, since Lab is only available from BGR
+   captured_frame_bgr = cv2.cvtColor(captured_frame, cv2.COLOR_BGRA2BGR)
+   # First blur to reduce noise prior to color space conversion
+   captured_frame_bgr = cv2.medianBlur(captured_frame_bgr, 3)
+   # Convert to Lab color space, we only need to check one channel (a-channel) for red here
+   captured_frame_lab = cv2.cvtColor(captured_frame_bgr, cv2.COLOR_BGR2Lab)
+   # Threshold the Lab image, keep only the red pixels
+   # Possible yellow threshold: [20, 110, 170][255, 140, 215]
+   # Possible blue threshold: [20, 115, 70][255, 145, 120]
+   captured_frame_lab_red = cv2.inRange(captured_frame_lab, np.array([20, 150, 150]), np.array([190, 255, 255]))
+   # Second blur to reduce more noise, easier circle detection
+   captured_frame_lab_red = cv2.GaussianBlur(captured_frame_lab_red, (5, 5), 2, 2)
+   # Use the Hough transform to detect circles in the image
+   circles = cv2.HoughCircles(captured_frame_lab_red, cv2.HOUGH_GRADIENT, 1, captured_frame_lab_red.shape[0] / 8, param1=100, param2=18, minRadius=5, maxRadius=60)
+   #time.sleep(0.1)
+
+   # If we have extracted a circle, draw an outline
+   # We only need to detect one circle here, since there will only be one reference object
+   if circles is not None:
+       circles = np.round(circles[0, :]).astype("int")
+       cv2.circle(output_frame, center=(circles[0, 0], circles[0, 1]), radius=circles[0, 2], color=(0, 255, 0), thickness=2)
+       return circles
+   else:
+     return None
 
 
 def main(argv):
   run_on_robot = FLAGS.run_on_robot
+  run_red_dot = FLAGS.red_dot
   reacher = reacher_sim_utils.load_reacher()
+  print("reacher loaded")
 
   # Sphere markers for the students' FK solutions
   shoulder_sphere_id = reacher_sim_utils.create_debug_sphere([1, 0, 0, 1])
@@ -126,6 +179,16 @@ def main(argv):
       else:
         joint_angles = slider_values
         enable = True
+      
+      
+      #overwrite whatever the sliders say if we are using red_dot
+      if FLAGS.red_dot:
+        print("red dot enabled")
+        circle = find_dot()
+        if circle is not None:
+          print("overwriting")
+          coords = pixel_to_position(circle)
+          xyz = np.mat([coords[0], coords[1], coords[2]])
 
       # If IK is enabled, update joint angles based off of goal XYZ position
       if FLAGS.ik:
@@ -142,6 +205,10 @@ def main(argv):
               if flags.FLAGS.set_joint_angles:
                 joint_angles = np.array(flags.FLAGS.set_joint_angles, dtype=np.float32)
               print("Prevented operation on real robot as inverse kinematics solution was not correct")
+
+      
+
+
 
       # If real-to-sim, update the joint angles based on the actual robot joint angles
       if real_to_sim:
