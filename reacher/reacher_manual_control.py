@@ -2,7 +2,6 @@ from reacher import forward_kinematics
 from reacher import inverse_kinematics
 from reacher import reacher_robot_utils
 from reacher import reacher_sim_utils
-from reacher import camera
 import pybullet as p
 import time
 import contextlib
@@ -16,7 +15,7 @@ import cv2
 flags.DEFINE_bool("run_on_robot", False, "Whether to run on robot or in simulation.")
 flags.DEFINE_bool("ik"          , False, "Whether to control arms through cartesian coordinates(IK) or joint angles")
 flags.DEFINE_list("set_joint_angles", [], "List of joint angles to set at initialization.")
-flags.DEFINE_bool("red_dot"), False, "Whether to control using red dot detection"
+flags.DEFINE_bool("red_dot", False, "Whether to control using red dot detection")
 FLAGS = flags.FLAGS
 
 KP = 5.0  # Amps/rad
@@ -28,7 +27,8 @@ UPDATE_DT = 0.01  # seconds
 HIP_OFFSET = 0.0335  # meters
 L1 = 0.08  # meters
 L2 = 0.11  # meters
-cap = cv2.VideoCapture(1)
+if(FLAGS.red_dot):  
+  cap = cv2.VideoCapture(0)
 
 def pixel_to_position(pixels):
     # print("pixels shape:", pixels.shape)
@@ -45,7 +45,7 @@ def pixel_to_position(pixels):
     y = (v - c_y) * d / f_y
     z = d
 
-    camera_coords = np.mat([x, y, z, 1]).T
+    camera_coords = np.array([x,y,z])
     return camera_coords
 
 def find_dot():
@@ -70,9 +70,11 @@ def find_dot():
 
    # If we have extracted a circle, draw an outline
    # We only need to detect one circle here, since there will only be one reference object
+  
    if circles is not None:
        circles = np.round(circles[0, :]).astype("int")
        cv2.circle(output_frame, center=(circles[0, 0], circles[0, 1]), radius=circles[0, 2], color=(0, 255, 0), thickness=2)
+       cv2.imshow('frame', output_frame)
        return circles
    else:
      return None
@@ -181,17 +183,19 @@ def main(argv):
         enable = True
       
       
-      #overwrite whatever the sliders say if we are using red_dot
+      # #overwrite whatever the sliders say if we are using red_dot
       if FLAGS.red_dot:
-        print("red dot enabled")
         circle = find_dot()
         if circle is not None:
-          print("overwriting")
+          
           coords = pixel_to_position(circle)
-          xyz = np.mat([coords[0], coords[1], coords[2]])
+          xyz = coords
+          xyz[2] = 0.1
+          print("overwriting", xyz)
 
       # If IK is enabled, update joint angles based off of goal XYZ position
       if FLAGS.ik:
+          print("xyz:", xyz)
           ret = inverse_kinematics.calculate_inverse_kinematics(xyz, joint_angles[:3])
           if ret is not None:
             enable = True

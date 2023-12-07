@@ -51,7 +51,7 @@ def calculate_jacobian_FD(joint_angles, delta):
 
     # Initialize Jacobian to zero
     J = np.zeros((3, 3))
-    print("deltatype", type(delta))
+    # print("deltatype", type(delta))
 
     # Add your solution here.
     for i in range(3):
@@ -97,19 +97,19 @@ def calculate_inverse_kinematics(end_effector_pos, guess):
         guess_pos = forward_kinematics.fk_foot(guess)
         # Calculate the Jacobian matrix using finite differences
         J = calculate_jacobian_FD(guess, PERTURBATION)
-        print("J",J)
+        # print("J",J)
         # Calculate the residual
         residual = end_effector_pos - guess_pos[:,-1][:3]
-        print("residual", residual)
+        # print("residual", residual)
         # Compute the step to update the joint angles using the Moore-Penrose pseudoinverse using numpy.linalg.pinv
         J_inv = np.linalg.pinv(J)
         # Take a full Newton step to update the guess for joint angles
         guess += np.dot(J_inv, residual)
-        print("guess", guess)
+        # print("guess", guess)
         # cost = # Add your solution here.
         cost = ik_cost(end_effector_pos, guess)
-        print("cost", cost)
-        print("psudeoJ", J_inv)
+        # print("cost", cost)
+        # print("psudeoJ", J_inv)
         breakpoint
         # Calculate the cost based on the updated guess
         if abs(previous_cost - cost) < TOLERANCE:
