@@ -27,8 +27,7 @@ UPDATE_DT = 0.01  # seconds
 HIP_OFFSET = 0.0335  # meters
 L1 = 0.08  # meters
 L2 = 0.11  # meters
-if(FLAGS.red_dot):  
-  cap = cv2.VideoCapture(0)
+
 
 def pixel_to_position(pixels):
     # print("pixels shape:", pixels.shape)
@@ -48,7 +47,7 @@ def pixel_to_position(pixels):
     camera_coords = np.array([x,y,z])
     return camera_coords
 
-def find_dot():
+def find_dot(cap):
   # Capture frame-by-frame
    ret, captured_frame = cap.read()
    output_frame = captured_frame.copy()
@@ -82,7 +81,8 @@ def find_dot():
 
 def main(argv):
   run_on_robot = FLAGS.run_on_robot
-  run_red_dot = FLAGS.red_dot
+  if(FLAGS.red_dot):  
+    cap = cv2.VideoCapture(0)
   reacher = reacher_sim_utils.load_reacher()
   print("reacher loaded")
 
@@ -185,12 +185,12 @@ def main(argv):
       
       # #overwrite whatever the sliders say if we are using red_dot
       if FLAGS.red_dot:
-        circle = find_dot()
+        circle = find_dot(cap)
         if circle is not None:
           
           coords = pixel_to_position(circle)
           xyz = coords
-          xyz[2] = 0.1
+          xyz[2] = 0.15
           print("overwriting", xyz)
 
       # If IK is enabled, update joint angles based off of goal XYZ position
