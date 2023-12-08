@@ -72,8 +72,8 @@ def find_dot(cap):
   
    if circles is not None:
        circles = np.round(circles[0, :]).astype("int")
-       cv2.circle(output_frame, center=(circles[0, 0], circles[0, 1]), radius=circles[0, 2], color=(0, 255, 0), thickness=2)
-       cv2.imshow('frame', output_frame)
+      #  cv2.circle(output_frame, center=(circles[0, 0], circles[0, 1]), radius=circles[0, 2], color=(0, 255, 0), thickness=2)
+      #  cv2.imshow('frame', output_frame)
        return circles
    else:
      return None
@@ -81,8 +81,8 @@ def find_dot(cap):
 
 def main(argv):
   run_on_robot = FLAGS.run_on_robot
-  if(FLAGS.red_dot):  
-    cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)
+  # if(FLAGS.red_dot):  
+  cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
   reacher = reacher_sim_utils.load_reacher()
   print("reacher loaded")
 
@@ -150,10 +150,12 @@ def main(argv):
       )
 
   print("\nRobot Status:\n")
-
+  xyz = np.array([0,0,0])
   # Main loop
   while (True):
 
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
     # Whether or not to send commands to the real robot
     enable = False
 
@@ -175,7 +177,7 @@ def main(argv):
         slider_values = np.array([p.readUserDebugParameter(id) for id in param_ids])
       except:
         pass
-      if FLAGS.ik:
+      if FLAGS.ik and not FLAGS.red_dot:
         xyz = slider_values
         p.resetBasePositionAndOrientation(target_sphere_id, posObj=xyz, ornObj=[0, 0, 0, 1])
       else:
@@ -195,6 +197,9 @@ def main(argv):
 
       # If IK is enabled, update joint angles based off of goal XYZ position
       if FLAGS.ik:
+          ret, img = cap.read()
+          cv2.imshow("frame", img)
+          
           print("xyz:", xyz)
           ret = inverse_kinematics.calculate_inverse_kinematics(xyz, joint_angles[:3])
           if ret is not None:

@@ -48,6 +48,8 @@ class GripPipeline:
         self.__find_blobs_input = self.hsv_threshold_output
         (self.find_blobs_output) = self.__find_blobs(self.__find_blobs_input, self.__find_blobs_min_area, self.__find_blobs_circularity, self.__find_blobs_dark_blobs)
 
+        return self.find_blobs_output
+
 
     @staticmethod
     def __blur(src, type, radius):
@@ -113,4 +115,17 @@ class GripPipeline:
 
 
 BlurType = Enum('BlurType', 'Box_Blur Gaussian_Blur Median_Filter Bilateral_Filter')
+if __name__ == "__main__":
+    video = cv2.VideoCapture(0)
+    grip = GripPipeline()
+    keyPoint = None
+    while(True):
+        ret, img = video.read()
+        processed = grip.process(img)
+        
+
+        cv2.imshow('frame', grip.hsv_threshold_output)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
 
