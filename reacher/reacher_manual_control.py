@@ -76,8 +76,8 @@ def find_dot(captured_frame):
    if circles is not None:
        print("FOUND A CIRCLE")
        circles = np.round(circles[0, :]).astype("int")
-       cv2.circle(output_frame, center=(circles[0, 0], circles[0, 1]), radius=circles[0, 2], color=(0, 255, 0), thickness=2)
-       cv2.imshow('frame', output_frame)
+      #  cv2.circle(output_frame, center=(circles[0, 0], circles[0, 1]), radius=circles[0, 2], color=(0, 255, 0), thickness=2)
+      #  cv2.imshow('frame', output_frame)
        print(circles[0])
        return circles[0]
    else:
@@ -88,7 +88,7 @@ def find_dot(captured_frame):
 def main(argv):
   run_on_robot = FLAGS.run_on_robot
   if(FLAGS.red_dot):  
-    cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)
+    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
   reacher = reacher_sim_utils.load_reacher()
   print("reacher loaded")
 
@@ -160,7 +160,8 @@ def main(argv):
   # Main loop
   while (True):
     ret, captured_frame = cap.read()
-    cv2.imshow("frame", captured_frame)
+    
+    
     if cv2.waitKey(1) & 0xFF == ord('q'):
        break
     # Whether or not to send commands to the real robot
@@ -173,7 +174,7 @@ def main(argv):
 
     # Determine the direction of data transfer
     real_to_sim = not motor_enabled and run_on_robot
-    xyz = np.array([0,0,0])
+   
     # Control loop
     if time.time() - last_command > UPDATE_DT:
       last_command = time.time()
@@ -184,39 +185,28 @@ def main(argv):
         slider_values = np.array([p.readUserDebugParameter(id) for id in param_ids])
       except:
         pass
-      # if FLAGS.ik:
-      #   # if not FLAGS.red_dot:
-      #   xyz = slider_values
-      #   p.resetBasePositionAndOrientation(target_sphere_id, posObj=xyz, ornObj=[0, 0, 0, 1])
-      # else:
-      #   joint_angles = slider_values
-      #   enable = True
+      if FLAGS.ik:
+        # if not FLAGS.red_dot:
+        xyz = slider_values
+        p.resetBasePositionAndOrientation(target_sphere_id, posObj=xyz, ornObj=[0, 0, 0, 1])
+      else:
+        joint_angles = slider_values
+        enable = True
       
       
       # #overwrite whatever the sliders say if we are using red_dot
       if FLAGS.red_dot:
-        print("red_Dot enabled")
+        # print("red_Dot enabled")
         circle = find_dot(captured_frame)
         if circle is not None:
           coords = pixel_to_position(circle)
-          global last_xyz
-          if last_xyz is not None:
-            xyz = coords * 0.1 + (1-0.1) * last_xyz
-          else:
-            xyz = coords
-          if (last_xyz is not None and (abs(xyz[0] - last_xyz[0] > 0.1 ) or abs(xyz[1] - last_xyz[1] > 0.1 ))):
-            print("!!!!!!!! OUT OF RANGE !!!!!!!!!")
-            print("CALCED XYZ", xyz)
-            print("LAST XYZ", last_xyz)
-            xyz = last_xyz
-          else:
-            print("WITHIN RANGE")
-            last_xyz = xyz
-          xyz[2] = 0.15 
-          print("overwriting", xyz)
-        else:
-          print("SETTING LAST XYZ")
-          xyz = last_xyz
+          xyz=coords
+          xyz[2] = xyz[1]
+          xyz[1] = 0.175
+          print("Updating:", xyz)
+          cv2.circle(captured_frame, center=(circle[0], circle[1]), radius=circle[2], color=(0, 255, 0), thickness=2)
+        cv2.imshow("frame", captured_frame)
+
 
       # If IK is enabled, update joint angles based off of goal XYZ position
       if FLAGS.ik or FLAGS.red_dot:
