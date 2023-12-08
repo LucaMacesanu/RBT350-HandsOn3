@@ -28,8 +28,10 @@ HIP_OFFSET = 0.0335  # meters
 L1 = 0.08  # meters
 L2 = 0.11  # meters
 
+last_xyz = None
 
 def pixel_to_position(pixels):
+    pixels = pixels.reshape(1, -1)
     # print("pixels shape:", pixels.shape)
     # Camera intrinsic matrix
     K = np.mat([[1.42127421e+03, 0.00000000e+00, 320],
@@ -43,13 +45,14 @@ def pixel_to_position(pixels):
     x = (u - c_x) * d / f_x
     y = (v - c_y) * d / f_y
     z = d
-
+    print("u:", u, "v:", v)
+    print("x:", x, "y:", y, "z:", z)
     camera_coords = np.array([x,y,z])
     return camera_coords
 
-def find_dot(cap):
+def find_dot(captured_frame):
   # Capture frame-by-frame
-   ret, captured_frame = cap.read()
+   
    output_frame = captured_frame.copy()
    # Convert original image to BGR, since Lab is only available from BGR
    captured_frame_bgr = cv2.cvtColor(captured_frame, cv2.COLOR_BGRA2BGR)
@@ -71,18 +74,21 @@ def find_dot(cap):
    # We only need to detect one circle here, since there will only be one reference object
   
    if circles is not None:
+       print("FOUND A CIRCLE")
        circles = np.round(circles[0, :]).astype("int")
-      #  cv2.circle(output_frame, center=(circles[0, 0], circles[0, 1]), radius=circles[0, 2], color=(0, 255, 0), thickness=2)
-      #  cv2.imshow('frame', output_frame)
-       return circles
+       cv2.circle(output_frame, center=(circles[0, 0], circles[0, 1]), radius=circles[0, 2], color=(0, 255, 0), thickness=2)
+       cv2.imshow('frame', output_frame)
+       print(circles[0])
+       return circles[0]
    else:
+     print("NO CIRCLE")
      return None
 
 
 def main(argv):
   run_on_robot = FLAGS.run_on_robot
-  # if(FLAGS.red_dot):  
-  cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+  if(FLAGS.red_dot):  
+    cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)
   reacher = reacher_sim_utils.load_reacher()
   print("reacher loaded")
 
@@ -153,9 +159,10 @@ def main(argv):
   xyz = np.array([0,0,0])
   # Main loop
   while (True):
-
+    ret, captured_frame = cap.read()
+    cv2.imshow("frame", captured_frame)
     if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
+       break
     # Whether or not to send commands to the real robot
     enable = False
 
@@ -166,7 +173,7 @@ def main(argv):
 
     # Determine the direction of data transfer
     real_to_sim = not motor_enabled and run_on_robot
-
+    xyz = np.array([0,0,0])
     # Control loop
     if time.time() - last_command > UPDATE_DT:
       last_command = time.time()
@@ -177,35 +184,50 @@ def main(argv):
         slider_values = np.array([p.readUserDebugParameter(id) for id in param_ids])
       except:
         pass
-      if FLAGS.ik and not FLAGS.red_dot:
-        xyz = slider_values
-        p.resetBasePositionAndOrientation(target_sphere_id, posObj=xyz, ornObj=[0, 0, 0, 1])
-      else:
-        joint_angles = slider_values
-        enable = True
+      # if FLAGS.ik:
+      #   # if not FLAGS.red_dot:
+      #   xyz = slider_values
+      #   p.resetBasePositionAndOrientation(target_sphere_id, posObj=xyz, ornObj=[0, 0, 0, 1])
+      # else:
+      #   joint_angles = slider_values
+      #   enable = True
       
       
       # #overwrite whatever the sliders say if we are using red_dot
       if FLAGS.red_dot:
         print("red_Dot enabled")
-        circle = find_dot(cap)
+        circle = find_dot(captured_frame)
         if circle is not None:
           coords = pixel_to_position(circle)
-          xyz = coords
-          xyz[2] = 0.15
+          global last_xyz
+          if last_xyz is not None:
+            xyz = coords * 0.1 + (1-0.1) * last_xyz
+          else:
+            xyz = coords
+          if (last_xyz is not None and (abs(xyz[0] - last_xyz[0] > 0.1 ) or abs(xyz[1] - last_xyz[1] > 0.1 ))):
+            print("!!!!!!!! OUT OF RANGE !!!!!!!!!")
+            print("CALCED XYZ", xyz)
+            print("LAST XYZ", last_xyz)
+            xyz = last_xyz
+          else:
+            print("WITHIN RANGE")
+            last_xyz = xyz
+          xyz[2] = 0.15 
           print("overwriting", xyz)
+        else:
+          print("SETTING LAST XYZ")
+          xyz = last_xyz
 
       # If IK is enabled, update joint angles based off of goal XYZ position
-      if FLAGS.ik:
-          ret, img = cap.read()
-          cv2.imshow("frame", img)
-          
-          print("xyz:", xyz)
+      if FLAGS.ik or FLAGS.red_dot:
+          print("SENDING THIS xyz:", xyz)
+          #p.resetBasePositionAndOrientation(target_sphere_id, posObj=xyz, ornObj=[0, 0, 0, 1])
           ret = inverse_kinematics.calculate_inverse_kinematics(xyz, joint_angles[:3])
           if ret is not None:
             enable = True
             # Wraps angles between -pi, pi
             joint_angles = np.arctan2(np.sin(ret), np.cos(ret))
+            print("<<JOINT ANGLES>>", joint_angles)
 
             # Double check that the angles are a correct solution before sending anything to the real robot
             pos = forward_kinematics.fk_foot(joint_angles[:3])[:3,3]

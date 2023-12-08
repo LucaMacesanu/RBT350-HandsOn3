@@ -188,8 +188,11 @@ def main(argv):
         #cv.imshow('redness', output_frame)
         if circles is not None:
           last_circles = circles
+        else:
+          circles = last_circles
 
         last_circles = np.round(last_circles[0, :]).astype("int")
+        print(circles)
         cv.circle(output_frame, center=(last_circles[0, 0], last_circles[0, 1]), radius=last_circles[0, 2], color=(0, 255, 0), thickness=2)
         cv.imshow('frame', output_frame)
 
