@@ -10,12 +10,12 @@ from absl import app
 from absl import flags
 from pupper_hardware_interface import interface
 from sys import platform
-import cv2
+import cv2 as cv, numpy as np
 
 flags.DEFINE_bool("run_on_robot", False, "Whether to run on robot or in simulation.")
 flags.DEFINE_bool("ik"          , False, "Whether to control arms through cartesian coordinates(IK) or joint angles")
+flags.DEFINE_bool("laser"          , False, "laser control for extra credit")
 flags.DEFINE_list("set_joint_angles", [], "List of joint angles to set at initialization.")
-flags.DEFINE_bool("red_dot", False, "Whether to control using red dot detection")
 FLAGS = flags.FLAGS
 
 KP = 5.0  # Amps/rad
@@ -28,63 +28,19 @@ HIP_OFFSET = 0.0335  # meters
 L1 = 0.08  # meters
 L2 = 0.11  # meters
 
-
-def pixel_to_position(pixels):
-    # print("pixels shape:", pixels.shape)
-    # Camera intrinsic matrix
-    K = np.mat([[1.42127421e+03, 0.00000000e+00, 320],
-    [0.00000000e+00, 1.42048319e+03, 240],
-    [0.00000000e+00, 0.00000000e+00, 1.00000000e+00]])
-    u = pixels[0,0]
-    v = pixels[0,1]
-    d = 1
-    c_x, c_y = K[0,2], K[1,2]
-    f_x,f_y = K[0,0], K[1,1]
-    x = (u - c_x) * d / f_x
-    y = (v - c_y) * d / f_y
-    z = d
-
-    camera_coords = np.array([x,y,z])
-    return camera_coords
-
-def find_dot(cap):
-  # Capture frame-by-frame
-   ret, captured_frame = cap.read()
-   output_frame = captured_frame.copy()
-   # Convert original image to BGR, since Lab is only available from BGR
-   captured_frame_bgr = cv2.cvtColor(captured_frame, cv2.COLOR_BGRA2BGR)
-   # First blur to reduce noise prior to color space conversion
-   captured_frame_bgr = cv2.medianBlur(captured_frame_bgr, 3)
-   # Convert to Lab color space, we only need to check one channel (a-channel) for red here
-   captured_frame_lab = cv2.cvtColor(captured_frame_bgr, cv2.COLOR_BGR2Lab)
-   # Threshold the Lab image, keep only the red pixels
-   # Possible yellow threshold: [20, 110, 170][255, 140, 215]
-   # Possible blue threshold: [20, 115, 70][255, 145, 120]
-   captured_frame_lab_red = cv2.inRange(captured_frame_lab, np.array([20, 150, 150]), np.array([190, 255, 255]))
-   # Second blur to reduce more noise, easier circle detection
-   captured_frame_lab_red = cv2.GaussianBlur(captured_frame_lab_red, (5, 5), 2, 2)
-   # Use the Hough transform to detect circles in the image
-   circles = cv2.HoughCircles(captured_frame_lab_red, cv2.HOUGH_GRADIENT, 1, captured_frame_lab_red.shape[0] / 8, param1=100, param2=18, minRadius=5, maxRadius=60)
-   #time.sleep(0.1)
-
-   # If we have extracted a circle, draw an outline
-   # We only need to detect one circle here, since there will only be one reference object
-  
-   if circles is not None:
-       circles = np.round(circles[0, :]).astype("int")
-       cv2.circle(output_frame, center=(circles[0, 0], circles[0, 1]), radius=circles[0, 2], color=(0, 255, 0), thickness=2)
-       cv2.imshow('frame', output_frame)
-       return circles
-   else:
-     return None
-
+FIX_X = 0.15 # meters
+EMA_ALPHA = 0.1 # less alpha = more smooth
 
 def main(argv):
+  if FLAGS.laser:
+    PIXEL_O = np.array((0, 0)) # reddest
+    PIXEL_U = PIXEL_V = MATRIX = None
+    ROBOT_O = np.array([FIX_X, -0.1, 0.1])
+    ROBOT_U = np.array([FIX_X, -0.1, -0.1])
+    ROBOT_V = np.array([FIX_X, 0.1, 0.1])
+    old_xyz = None
   run_on_robot = FLAGS.run_on_robot
-  if(FLAGS.red_dot):  
-    cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)
   reacher = reacher_sim_utils.load_reacher()
-  print("reacher loaded")
 
   # Sphere markers for the students' FK solutions
   shoulder_sphere_id = reacher_sim_utils.create_debug_sphere([1, 0, 0, 1])
@@ -151,6 +107,14 @@ def main(argv):
 
   print("\nRobot Status:\n")
 
+  if FLAGS.laser:
+    cap = cv.VideoCapture(1, cv.CAP_DSHOW)
+    if not cap.isOpened():
+      print('cannot open camera')
+      return
+
+  last_circles = None
+
   # Main loop
   while (True):
 
@@ -165,6 +129,35 @@ def main(argv):
     # Determine the direction of data transfer
     real_to_sim = not motor_enabled and run_on_robot
 
+    if FLAGS.laser:
+      ret, captured_frame = cap.read()
+      output_frame = captured_frame.copy()
+      # Convert original image to BGR, since Lab is only available from BGR
+      captured_frame_bgr = cv.cvtColor(captured_frame, cv.COLOR_BGRA2BGR)
+      # First blur to reduce noise prior to color space conversion
+      captured_frame_bgr = cv.medianBlur(captured_frame_bgr, 3)
+      # Convert to Lab color space, we only need to check one channel (a-channel) for red here
+      captured_frame_lab = cv.cvtColor(captured_frame_bgr, cv.COLOR_BGR2Lab)
+      # Threshold the Lab image, keep only the red pixels
+      # Possible yellow threshold: [20, 110, 170][255, 140, 215]
+      # Possible blue threshold: [20, 115, 70][255, 145, 120]
+      captured_frame_lab_red = cv.inRange(captured_frame_lab, np.array([20, 150, 150]), np.array([190, 255, 255]))
+      # Second blur to reduce more noise, easier circle detection
+      captured_frame_lab_red = cv.GaussianBlur(captured_frame_lab_red, (5, 5), 2, 2)
+      # Use the Hough transform to detect circles in the image
+      circles = cv.HoughCircles(captured_frame_lab_red, cv.HOUGH_GRADIENT, 1, captured_frame_lab_red.shape[0] / 8, param1=100, param2=18, minRadius=5, maxRadius=60)
+      #time.sleep(0.1)
+      if not ret:
+        print("can't receive frame (stream end?). exiting...")
+        break
+      if cv.waitKey(1) == ord('q'):
+        break
+
+    if MATRIX is None:
+      PIXEL_U = np.array((output_frame.shape[0], 0)) # reddest
+      PIXEL_V = np.array((0, output_frame.shape[1])) # reddest
+      MATRIX = np.linalg.inv(np.column_stack((PIXEL_U - PIXEL_O, PIXEL_V - PIXEL_O)))
+
     # Control loop
     if time.time() - last_command > UPDATE_DT:
       last_command = time.time()
@@ -177,42 +170,55 @@ def main(argv):
         pass
       if FLAGS.ik:
         xyz = slider_values
-        p.resetBasePositionAndOrientation(target_sphere_id, posObj=xyz, ornObj=[0, 0, 0, 1])
+        xyz[0] = FIX_X
+      elif FLAGS.laser:
+        xyz = [0, 0, 0]
+        # if circles is not None:
+        #   circles = np.round(circles[0, :]).astype("int")
+        #   cv.circle(output_frame, center=(circles[0, 0], circles[0, 1]), radius=circles[0, 2], color=(0, 255, 0), thickness=2)
+        #   cv.imshow('frame', output_frame)
+        #   return circles
+        # else:
+        #   return None
+        # redness = output_frame / 255
+        # redness = redness[:, :, 1] / np.linalg.norm(redness, axis=2)
+        # reddest = np.array(np.unravel_index(redness.argmax(), redness.shape))
+
+        #cv.circle(redness, reddest[::-1], radius=10, color=1, thickness=2)
+        #cv.imshow('redness', output_frame)
+        if circles is not None:
+          last_circles = circles
+
+        last_circles = np.round(last_circles[0, :]).astype("int")
+        cv.circle(output_frame, center=(last_circles[0, 0], last_circles[0, 1]), radius=last_circles[0, 2], color=(0, 255, 0), thickness=2)
+        cv.imshow('frame', output_frame)
+
+        u, v = MATRIX @ ((last_circles[0, 0], last_circles[0, 1]) - PIXEL_O)
+        xyz = ROBOT_O + u * (ROBOT_U - ROBOT_O) + v * (ROBOT_V - ROBOT_O)
+        xyz[0] = FIX_X
+        if old_xyz is not None:
+          xyz = xyz * EMA_ALPHA + (1-EMA_ALPHA) * old_xyz
+        old_xyz = xyz
       else:
         joint_angles = slider_values
         enable = True
-      
-      
-      # #overwrite whatever the sliders say if we are using red_dot
-      if FLAGS.red_dot:
-        print("red_Dot enabled")
-        circle = find_dot(cap)
-        if circle is not None:
-          coords = pixel_to_position(circle)
-          xyz = coords
-          xyz[2] = 0.15
-          print("overwriting", xyz)
 
       # If IK is enabled, update joint angles based off of goal XYZ position
-      if FLAGS.ik:
-          print("xyz:", xyz)
-          ret = inverse_kinematics.calculate_inverse_kinematics(xyz, joint_angles[:3])
-          if ret is not None:
+      if FLAGS.ik or FLAGS.laser:
+        p.resetBasePositionAndOrientation(target_sphere_id, posObj=xyz, ornObj=[0, 0, 0, 1])
+        ret = inverse_kinematics.calculate_inverse_kinematics(xyz, joint_angles[:3])
+        if ret is not None:
             enable = True
             # Wraps angles between -pi, pi
             joint_angles = np.arctan2(np.sin(ret), np.cos(ret))
 
             # Double check that the angles are a correct solution before sending anything to the real robot
             pos = forward_kinematics.fk_foot(joint_angles[:3])[:3,3]
-            if np.linalg.norm(np.asarray(pos) - xyz) > 0.5:
-              joint_angles = np.zeros_like(joint_angles)
+            if np.linalg.norm(np.asarray(pos) - xyz) > 0.05:
+              # joint_angles = np.zeros_like(joint_angles)
               if flags.FLAGS.set_joint_angles:
                 joint_angles = np.array(flags.FLAGS.set_joint_angles, dtype=np.float32)
               print("Prevented operation on real robot as inverse kinematics solution was not correct")
-
-      
-
-
 
       # If real-to-sim, update the joint angles based on the actual robot joint angles
       if real_to_sim:
@@ -244,7 +250,6 @@ def main(argv):
       elbow_pos    = forward_kinematics.fk_elbow(joint_angles[:3])[:3,3]
       foot_pos     = forward_kinematics.fk_foot(joint_angles[:3])[:3,3]
 
-      # shoulder_pos = np.array([0,0,0,1])
       # Show the bebug spheres for FK
       p.resetBasePositionAndOrientation(shoulder_sphere_id, posObj=shoulder_pos, ornObj=[0, 0, 0, 1])
       p.resetBasePositionAndOrientation(elbow_sphere_id   , posObj=elbow_pos   , ornObj=[0, 0, 0, 1])
@@ -253,5 +258,9 @@ def main(argv):
       # Show the result in the terminal
       if counter % 20 == 0:
         print(f"\rJoint angles: [{', '.join(f'{q: .3f}' for q in joint_angles[:3])}] | Position: ({', '.join(f'{p: .3f}' for p in foot_pos)})", end='')
+
+  if FLAGS.laser:
+    cap.release()
+    cv.destroyAllWindows()
 
 app.run(main)

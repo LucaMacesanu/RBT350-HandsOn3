@@ -3,7 +3,7 @@ import cv2
 import time
 
 
-cap = cv2.VideoCapture(1)
+cap = cv2.VideoCapture(0)
 # intrinsics = np.mat([[1.42127421e+03, 0.00000000e+00, 9.80978474e+02],
 #  [0.00000000e+00, 1.42048319e+03, 5.47188117e+02],
 #  [0.00000000e+00, 0.00000000e+00, 1.00000000e+00]])
@@ -47,6 +47,7 @@ def pixel_to_position(pixels):
 while(True):
    # Capture frame-by-frame
    ret, captured_frame = cap.read()
+   
    output_frame = captured_frame.copy()
 #    print("image shape: ", output_frame.shape)
 
