@@ -47,9 +47,7 @@ def pixel_to_position(pixels):
     camera_coords = np.array([x,y,z])
     return camera_coords
 
-def find_dot(cap):
-  # Capture frame-by-frame
-   ret, captured_frame = cap.read()
+def find_dot(captured_frame):
    output_frame = captured_frame.copy()
    # Convert original image to BGR, since Lab is only available from BGR
    captured_frame_bgr = cv2.cvtColor(captured_frame, cv2.COLOR_BGRA2BGR)
@@ -72,8 +70,6 @@ def find_dot(cap):
   
    if circles is not None:
        circles = np.round(circles[0, :]).astype("int")
-      #  cv2.circle(output_frame, center=(circles[0, 0], circles[0, 1]), radius=circles[0, 2], color=(0, 255, 0), thickness=2)
-      #  cv2.imshow('frame', output_frame)
        return circles
    else:
      return None
@@ -153,7 +149,7 @@ def main(argv):
   xyz = np.array([0,0,0])
   # Main loop
   while (True):
-
+    ret, img = cap.read()
     if cv2.waitKey(1) & 0xFF == ord('q'):
             break
     # Whether or not to send commands to the real robot
@@ -187,20 +183,19 @@ def main(argv):
       
       # #overwrite whatever the sliders say if we are using red_dot
       if FLAGS.red_dot:
-        print("red_Dot enabled")
-        circle = find_dot(cap)
+        # print("red_Dot enabled")
+        circle = find_dot(img)
         if circle is not None:
+          cv2.circle(img=img, center=(circle[0, 0], circle[0, 1]), radius=circle[0, 2], color=(0, 255, 0), thickness=2)
           coords = pixel_to_position(circle)
           xyz = coords
           xyz[2] = 0.15
           print("overwriting", xyz)
+      cv2.imshow('frame', img)
 
       # If IK is enabled, update joint angles based off of goal XYZ position
       if FLAGS.ik:
-          ret, img = cap.read()
-          cv2.imshow("frame", img)
-          
-          print("xyz:", xyz)
+          # print("xyz:", xyz)
           ret = inverse_kinematics.calculate_inverse_kinematics(xyz, joint_angles[:3])
           if ret is not None:
             enable = True

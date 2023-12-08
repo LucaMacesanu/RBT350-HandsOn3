@@ -12,21 +12,34 @@ class GripPipeline:
         """initializes all values to presets or None if need to be set
         """
 
-        self.__blur_type = BlurType.Box_Blur
-        self.__blur_radius = 3.6036036036036028
+        self.__normalize_type = cv2.NORM_MINMAX
+        self.__normalize_alpha = 100.0
+        self.__normalize_beta = 200.0
 
-        self.blur_output = None
+        self.normalize_output = None
 
-        self.__hsv_threshold_input = self.blur_output
-        self.__hsv_threshold_hue = [153.77697841726618, 180.0]
-        self.__hsv_threshold_saturation = [116.95143884892086, 244.26767676767676]
-        self.__hsv_threshold_value = [91.72661870503596, 235.68181818181816]
+        self.__blur_0_input = self.normalize_output
+        self.__blur_0_type = BlurType.Gaussian_Blur
+        self.__blur_0_radius = 2.702702702702702
 
-        self.hsv_threshold_output = None
+        self.blur_0_output = None
 
-        self.__find_blobs_input = self.hsv_threshold_output
-        self.__find_blobs_min_area = 4.0
-        self.__find_blobs_circularity = [0.8363309352517986, 1.0]
+        self.__hsl_threshold_input = self.blur_0_output
+        self.__hsl_threshold_hue = [0.0, 180.0]
+        self.__hsl_threshold_saturation = [38.98381294964029, 255.0]
+        self.__hsl_threshold_luminance = [121.53776978417265, 255.0]
+
+        self.hsl_threshold_output = None
+
+        self.__blur_1_input = self.hsl_threshold_output
+        self.__blur_1_type = BlurType.Median_Filter
+        self.__blur_1_radius = 0.0
+
+        self.blur_1_output = None
+
+        self.__find_blobs_input = self.blur_1_output
+        self.__find_blobs_min_area = 20.0
+        self.__find_blobs_circularity = [0.4226618705035971, 1.0]
         self.__find_blobs_dark_blobs = False
 
         self.find_blobs_output = None
@@ -36,20 +49,55 @@ class GripPipeline:
         """
         Runs the pipeline and sets all outputs to new values.
         """
-        # Step Blur0:
-        self.__blur_input = source0
-        (self.blur_output) = self.__blur(self.__blur_input, self.__blur_type, self.__blur_radius)
+        # Step Normalize0:
+        self.__normalize_input = source0
+        (self.normalize_output) = self.__normalize(self.__normalize_input, self.__normalize_type, self.__normalize_alpha, self.__normalize_beta)
 
-        # Step HSV_Threshold0:
-        self.__hsv_threshold_input = self.blur_output
-        (self.hsv_threshold_output) = self.__hsv_threshold(self.__hsv_threshold_input, self.__hsv_threshold_hue, self.__hsv_threshold_saturation, self.__hsv_threshold_value)
+        # Step Blur0:
+        self.__blur_0_input = self.normalize_output
+        (self.blur_0_output) = self.__blur(self.__blur_0_input, self.__blur_0_type, self.__blur_0_radius)
+
+        # Step HSL_Threshold0:
+        self.__hsl_threshold_input = self.blur_0_output
+        (self.hsl_threshold_output) = self.__hsl_threshold(self.__hsl_threshold_input, self.__hsl_threshold_hue, self.__hsl_threshold_saturation, self.__hsl_threshold_luminance)
+
+        # Step Blur1:
+        self.__blur_1_input = self.hsl_threshold_output
+        (self.blur_1_output) = self.__blur(self.__blur_1_input, self.__blur_1_type, self.__blur_1_radius)
 
         # Step Find_Blobs0:
-        self.__find_blobs_input = self.hsv_threshold_output
+        self.__find_blobs_input = self.blur_1_output
         (self.find_blobs_output) = self.__find_blobs(self.__find_blobs_input, self.__find_blobs_min_area, self.__find_blobs_circularity, self.__find_blobs_dark_blobs)
+        if len(self.find_blobs_output) > 0:
+            return self.find_blobs_output[0].pt
+        return None
 
-        return self.find_blobs_output
+    @staticmethod
+    def __normalize(input, type, a, b):
+        """Normalizes or remaps the values of pixels in an image.
+        Args:
+            input: A numpy.ndarray.
+            type: Opencv enum.
+            a: The minimum value.
+            b: The maximum value.
+        Returns:
+            A numpy.ndarray of the same type as the input.
+        """
+        return cv2.normalize(input, None, a, b, type)
 
+    @staticmethod
+    def __hsl_threshold(input, hue, sat, lum):
+        """Segment an image based on hue, saturation, and luminance ranges.
+        Args:
+            input: A BGR numpy.ndarray.
+            hue: A list of two numbers the are the min and max hue.
+            sat: A list of two numbers the are the min and max saturation.
+            lum: A list of two numbers the are the min and max luminance.
+        Returns:
+            A black and white numpy.ndarray.
+        """
+        out = cv2.cvtColor(input, cv2.COLOR_BGR2HLS)
+        return cv2.inRange(out, (hue[0], lum[0], sat[0]),  (hue[1], lum[1], sat[1]))
 
     @staticmethod
     def __blur(src, type, radius):
@@ -72,20 +120,6 @@ class GripPipeline:
             return cv2.medianBlur(src, ksize)
         else:
             return cv2.bilateralFilter(src, -1, round(radius), round(radius))
-
-    @staticmethod
-    def __hsv_threshold(input, hue, sat, val):
-        """Segment an image based on hue, saturation, and value ranges.
-        Args:
-            input: A BGR numpy.ndarray.
-            hue: A list of two numbers the are the min and max hue.
-            sat: A list of two numbers the are the min and max saturation.
-            lum: A list of two numbers the are the min and max value.
-        Returns:
-            A black and white numpy.ndarray.
-        """
-        out = cv2.cvtColor(input, cv2.COLOR_BGR2HSV)
-        return cv2.inRange(out, (hue[0], sat[0], val[0]),  (hue[1], sat[1], val[1]))
 
     @staticmethod
     def __find_blobs(input, min_area, circularity, dark_blobs):
@@ -122,10 +156,12 @@ if __name__ == "__main__":
     while(True):
         ret, img = video.read()
         processed = grip.process(img)
+        # print(grip.find_blobs_output)
+        if processed is not None:
+            print(processed)
         
 
-        cv2.imshow('frame', grip.hsv_threshold_output)
+        cv2.imshow('frame', grip.hsl_threshold_output)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
-
 
